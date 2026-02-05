@@ -323,16 +323,19 @@ def should_end_conversation(message: str, session) -> bool:
     Detect if the conversation should end.
 
     Triggers:
-    - All critical intelligence gathered (UPI, phone, bank account)
+    - All critical intelligence gathered (UPI, phone, bank account, link)
     - Explicit end signals from scammer (when they realize it's a trap)
-    - Conversation too long (>50 messages)
-    - Minimum engagement required (at least 4 messages)
+    - Conversation too long (>25 messages)
+    - Minimum engagement required (at least 10 messages)
+
+    We keep conversations going longer to maximize intelligence extraction.
     """
     # Don't end conversation too early - need minimum engagement for intelligence
-    if session.total_messages < 4:
+    # Increased from 4 to 10 to gather more intel before considering end
+    if session.total_messages < 10:
         return False
 
-    # Check if we've gathered sufficient intelligence
+    # Check if we've gathered sufficient intelligence (requires 2+ high-value items)
     intel = session.extracted_intelligence
     if has_sufficient_intelligence(intel):
         logger.info(
