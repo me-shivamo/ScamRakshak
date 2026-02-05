@@ -351,13 +351,16 @@ async def send_callback_background(session_id: str):
     Send callback in the background.
 
     This is called when we detect the conversation has ended.
+    Only sends callback if scam was detected (GUVI requirement).
     """
     session = await session_manager.get(session_id)
-    if session and not session.callback_sent:
+    if session and not session.callback_sent and session.scam_detected:
         logger.info(f"Sending callback for session {session_id}")
         success = await callback_service.send_callback(session)
         if success:
             await session_manager.mark_callback_sent(session_id)
+    elif session and not session.scam_detected:
+        logger.info(f"Skipping callback for session {session_id} - no scam detected")
 
 
 # ===== Run the App =====

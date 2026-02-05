@@ -6,7 +6,7 @@ Think of it like a settings panel - all configuration in one place.
 
 HOW IT WORKS:
 1. When the app starts, this file reads from .env file (or system environment)
-2. It validates that required values exist (API_KEY, GEMINI_API_KEY)
+2. It validates that required values exist (API_KEY, OPENAI_API_KEY)
 3. It provides default values for optional settings
 4. Other files import 'settings' from here to access configuration
 """

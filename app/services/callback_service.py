@@ -77,6 +77,10 @@ class CallbackService:
             f"Scam: {session.scam_detected}, Messages: {session.total_messages}"
         )
 
+        # Log the payload for debugging
+        payload_dict = payload.model_dump()
+        logger.info(f"Callback payload: {payload_dict}")
+
         try:
             # Send HTTP POST request to GUVI
             async with httpx.AsyncClient() as client:
