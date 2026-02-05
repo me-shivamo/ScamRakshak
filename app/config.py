@@ -31,18 +31,15 @@ class Settings(BaseSettings):
     # Your secret API key - GUVI tester sends this in x-api-key header
     API_KEY: str
 
-    # Google Gemini API key for AI capabilities
-    GEMINI_API_KEY: str
+    # OpenAI API key for AI capabilities
+    OPENAI_API_KEY: str
 
     # ===== Optional Settings (have default values) =====
 
-    # Which Gemini model to use
-    # gemini-1.5-flash = fast and cheap, good for hackathons
-    # gemini-1.5-pro = more powerful but slower and more expensive
-    GEMINI_MODEL: str = "gemini-2.5-flash-lite"
-    # Which Gemini model to use (gemini-1.5-flash is fast and cheap)
-    # gemini-2.5-flash DUE
-    # gemini-3-flash-preview OVER
+    # Which OpenAI model to use
+    # gpt-4o-mini = fast and cheap, good for hackathons
+    # gpt-4o = more powerful but slower and more expensive
+    OPENAI_MODEL: str = "gpt-4o-mini"
 
 
     # Session timeout in seconds (default: 1 hour)

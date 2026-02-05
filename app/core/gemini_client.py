@@ -1,11 +1,11 @@
 """
-Google Gemini AI Client
+OpenAI ChatGPT Client
 
-This file wraps the Google Gemini API to make it easy to use.
-Think of it as a "translator" between our code and Google's AI.
+This file wraps the OpenAI API to make it easy to use.
+Think of it as a "translator" between our code and OpenAI's AI.
 
-WHAT IS GEMINI?
-Gemini is Google's AI model (like ChatGPT but from Google).
+WHAT IS ChatGPT?
+ChatGPT is OpenAI's AI model - fast, reliable, and powerful.
 It can understand text, analyze content, and generate responses.
 
 WHY A WRAPPER?
@@ -16,7 +16,7 @@ functions like "analyze_for_scam()" and "generate_response()".
 import json
 import re
 import logging
-import google.generativeai as genai
+from openai import AsyncOpenAI
 from typing import Dict, List, Optional
 
 from app.config import settings
@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 
 class GeminiClient:
     """
-    Client for interacting with Google Gemini AI.
+    Client for interacting with OpenAI ChatGPT.
+
+    Note: Class name kept as GeminiClient for backward compatibility
+    with existing imports throughout the codebase.
 
     Usage:
         client = GeminiClient()
@@ -37,19 +40,18 @@ class GeminiClient:
 
     def __init__(self):
         """
-        Initialize the Gemini client with API key.
+        Initialize the OpenAI client with API key.
 
         This runs once when we create the client.
-        It sets up the connection to Google's AI.
+        It sets up the connection to OpenAI's AI.
         """
-        # Configure the API with our key
-        genai.configure(api_key=settings.GEMINI_API_KEY)
+        # Create the async OpenAI client
+        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-        # Create the model instance
-        # gemini-1.5-flash is fast and cheap - perfect for hackathons
-        self.model = genai.GenerativeModel(settings.GEMINI_MODEL)
+        # Store the model name
+        self.model = settings.OPENAI_MODEL
 
-        logger.info(f"Gemini client initialized with model: {settings.GEMINI_MODEL}")
+        logger.info(f"OpenAI client initialized with model: {self.model}")
 
     async def analyze_for_scam(
         self,
@@ -83,7 +85,6 @@ class GeminiClient:
             }
         """
         # Create the analysis prompt
-        # We ask Gemini to respond in JSON format for easy parsing
         analysis_prompt = f"""Analyze this message for scam/fraud indicators.
 
 Context (previous conversation): {context if context else "None"}
@@ -109,20 +110,22 @@ Respond in JSON format ONLY (no other text):
 }}"""
 
         try:
-            # Call Gemini API
-            response = self.model.generate_content(
-                analysis_prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.1,  # Low temperature = more consistent/factual
-                    max_output_tokens=1000
-                )
+            # Call OpenAI API
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a scam detection expert. Always respond with valid JSON only."},
+                    {"role": "user", "content": analysis_prompt}
+                ],
+                temperature=0.1,  # Low temperature = more consistent/factual
+                max_tokens=1000
             )
 
             # Parse the JSON response
-            return self._parse_json_response(response.text)
+            return self._parse_json_response(response.choices[0].message.content)
 
         except Exception as e:
-            logger.error(f"Gemini analysis error: {e}")
+            logger.error(f"OpenAI analysis error: {e}")
             # Return safe defaults if API fails
             return {
                 "is_scam": False,
@@ -160,25 +163,29 @@ Respond in JSON format ONLY (no other text):
             >>> print(response)
             "Arre wah! Lottery? Mujhe toh yaad nahi maine koi ticket liya tha..."
         """
-        # Build the full prompt with conversation context
-        full_prompt = self._build_conversation_prompt(
-            system_prompt,
-            conversation_history,
-            scammer_message
-        )
+        # Build messages for ChatGPT
+        messages = [{"role": "system", "content": system_prompt}]
+
+        # Add conversation history (last 10 messages)
+        for msg in conversation_history[-10:]:
+            role = "assistant" if msg.get("role") != "scammer" else "user"
+            content = msg.get("content", "")
+            messages.append({"role": role, "content": content})
+
+        # Add the current scammer message
+        messages.append({"role": "user", "content": scammer_message})
 
         try:
-            # Call Gemini API
-            response = self.model.generate_content(
-                full_prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=temperature,  # Higher = more creative
-                    max_output_tokens=300  # Keep responses short and natural
-                )
+            # Call OpenAI API
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,  # Higher = more creative
+                max_tokens=300  # Keep responses short and natural
             )
 
             # Clean up the response
-            reply = response.text.strip()
+            reply = response.choices[0].message.content.strip()
 
             # Remove any quotation marks at start/end
             reply = reply.strip('"\'')
@@ -186,7 +193,7 @@ Respond in JSON format ONLY (no other text):
             return reply
 
         except Exception as e:
-            logger.error(f"Gemini response generation error: {e}")
+            logger.error(f"OpenAI response generation error: {e}")
             # Return a generic response if API fails
             return "Error occurred while generating response. Please try again later."
 
@@ -235,17 +242,19 @@ Respond in JSON format ONLY:
 }}"""
 
         try:
-            response = self.model.generate_content(
-                extraction_prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.1,
-                    max_output_tokens=300
-                )
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a data extraction expert. Always respond with valid JSON only."},
+                    {"role": "user", "content": extraction_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=300
             )
-            return self._parse_json_response(response.text)
+            return self._parse_json_response(response.choices[0].message.content)
 
         except Exception as e:
-            logger.error(f"Gemini extraction error: {e}")
+            logger.error(f"OpenAI extraction error: {e}")
             return {}
 
     def _build_conversation_prompt(
@@ -257,7 +266,7 @@ Respond in JSON format ONLY:
         """
         Build the full prompt including conversation history.
 
-        We include the last 10 messages so Gemini understands context
+        We include the last 10 messages so AI understands context
         but don't include too many (to save tokens/cost).
         """
         parts = [system_prompt, "\n\n--- CONVERSATION ---\n"]
@@ -276,9 +285,9 @@ Respond in JSON format ONLY:
 
     def _parse_json_response(self, text: str) -> Dict:
         """
-        Parse JSON from Gemini's response.
+        Parse JSON from OpenAI's response.
 
-        Gemini sometimes wraps JSON in markdown code blocks,
+        OpenAI sometimes wraps JSON in markdown code blocks,
         so we need to handle that.
         """
         # Try to extract JSON from code blocks

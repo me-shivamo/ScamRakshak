@@ -7,7 +7,7 @@ pydantic==2.5.3           # Pydantic - Validates data automatically (checks if d
 pydantic-settings==2.1.0  # Helps load settings from environment variables
 
 # AI / Machine Learning
-google-generativeai==0.3.2  # Google Gemini - The AI that detects scams and generates responses
+openai>=1.0.0               # OpenAI ChatGPT - The AI that detects scams and generates responses
 
 # HTTP Client
 httpx==0.26.0             # HTTPX - Makes HTTP requests (to send data to GUVI callback)
