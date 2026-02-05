@@ -39,9 +39,17 @@ BANK_ACCOUNT_PATTERN = r'\b\d{9,18}\b'
 PHONE_PATTERN = r'(?:\+?91[\-\s]?)?[6-9]\d{9}'
 
 # URL/Link Pattern
-# Matches: http://... or https://...
-# [^\s<>"{}|\\^`\[\]]+ means "any character except whitespace and special chars"
-URL_PATTERN = r'https?://[^\s<>"{}|\\^`\[\]]+'
+# Matches various URL formats:
+#   - http://example.com or https://example.com (with or without path)
+#   - www.example.com (with or without path)
+#   - domain.com/path (must have path to avoid false positives from emails)
+#   - bit.ly/xyz, tinyurl.com/abc (URL shorteners)
+# We require either:
+#   - http:// or https:// prefix, OR
+#   - www. prefix, OR
+#   - a path after the domain (/)
+# This avoids matching email domains like gmail.com
+URL_PATTERN = r'(?:https?://[^\s<>"{}|\\^`\[\]]+|www\.[a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z]{2,})+[^\s<>"{}|\\^`\[\]]*|[a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z]{2,})+/[^\s<>"{}|\\^`\[\]]*)'
 
 # Email Pattern
 # Standard email format: something@something.something
