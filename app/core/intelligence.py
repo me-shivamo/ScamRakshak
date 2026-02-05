@@ -13,18 +13,25 @@ The information we extract helps catch scammers!
 GUVI evaluates us on the quality of intelligence we gather.
 
 EXTRACTION METHOD:
-AI-only extraction - Uses LLM to comprehensively extract all intelligence
-from the entire conversation history. This catches:
-- Standard formats (phone numbers, UPI IDs, etc.)
-- Obfuscated data (numbers written as words)
-- Context-dependent information
+Hybrid extraction - Uses both regex patterns AND AI for comprehensive extraction:
+- Regex catches standard formats reliably (UPI IDs, phone numbers, URLs)
+- AI catches obfuscated data (numbers written as words) and context-dependent info
 """
 
+import re
 import logging
 from typing import List, Set, Dict
 
 from app.models.schemas import ExtractedIntelligence
 from app.core.gemini_client import gemini_client
+from app.utils.patterns import (
+    UPI_PATTERN,
+    PHONE_PATTERN,
+    BANK_ACCOUNT_PATTERN,
+    URL_PATTERN,
+    EMAIL_PATTERN,
+    SUSPICIOUS_KEYWORDS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +40,9 @@ class IntelligenceExtractor:
     """
     Extract actionable intelligence from scammer conversations.
 
-    Uses AI-only extraction to comprehensively analyze the entire
-    conversation history and extract all intelligence.
+    Uses hybrid extraction combining:
+    - Regex patterns: Reliable extraction of standard formats (UPI IDs, phones, URLs)
+    - AI extraction: Catches obfuscated data and context-dependent info
 
     Usage:
         extractor = IntelligenceExtractor()
@@ -54,7 +62,10 @@ class IntelligenceExtractor:
         existing: ExtractedIntelligence = None
     ) -> ExtractedIntelligence:
         """
-        Extract all intelligence from conversation using AI.
+        Extract all intelligence from conversation using hybrid approach.
+
+        Uses both regex patterns (for reliable standard format extraction)
+        and AI (for obfuscated/context-dependent extraction).
 
         Args:
             conversation_history: List of messages with 'role' and 'content' keys
@@ -65,13 +76,30 @@ class IntelligenceExtractor:
         """
         logger.debug(f"Extracting intelligence from conversation with {len(conversation_history)} messages")
 
-        # Use AI to extract intelligence from entire conversation
+        # Combine all conversation text for regex extraction
+        full_text = " ".join([
+            msg.get("content", "") for msg in conversation_history
+        ])
+
+        # Step 1: Extract using regex patterns (reliable for standard formats)
+        regex_intel = self._extract_with_regex(full_text)
+
+        # Step 2: Use AI to extract intelligence (catches obfuscated data)
         ai_intel = await gemini_client.extract_intelligence_from_conversation(
             conversation_history
         )
 
-        # Merge with existing intelligence
-        merged = self._merge_intelligence(ai_intel, existing)
+        # Step 3: Merge regex results into ai_intel
+        combined_intel = {
+            "bankAccounts": list(set(ai_intel.get("bankAccounts", []) + regex_intel.get("bankAccounts", []))),
+            "upiIds": list(set(ai_intel.get("upiIds", []) + regex_intel.get("upiIds", []))),
+            "phoneNumbers": list(set(ai_intel.get("phoneNumbers", []) + regex_intel.get("phoneNumbers", []))),
+            "phishingLinks": list(set(ai_intel.get("phishingLinks", []) + regex_intel.get("phishingLinks", []))),
+            "suspiciousKeywords": list(set(ai_intel.get("suspiciousKeywords", []) + regex_intel.get("suspiciousKeywords", [])))
+        }
+
+        # Step 4: Merge with existing intelligence
+        merged = self._merge_intelligence(combined_intel, existing)
 
         logger.info(
             f"Extracted: {len(merged.upiIds)} UPIs, "
@@ -82,6 +110,64 @@ class IntelligenceExtractor:
         )
 
         return merged
+
+    def _extract_with_regex(self, text: str) -> Dict:
+        """
+        Extract intelligence using regex patterns.
+
+        This ensures standard format data is reliably captured
+        even if AI misses it.
+
+        Args:
+            text: Full conversation text to analyze
+
+        Returns:
+            Dictionary with extracted data
+        """
+        # Extract UPI IDs - exclude email addresses
+        upi_matches = re.findall(UPI_PATTERN, text, re.IGNORECASE)
+        # Filter out email addresses (those with domain extensions like .com, .org)
+        upi_ids = [
+            upi for upi in upi_matches
+            if not re.search(r'@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', upi)
+        ]
+
+        # Extract phone numbers and normalize to 10 digits
+        phone_matches = re.findall(PHONE_PATTERN, text)
+        phone_numbers = []
+        for phone in phone_matches:
+            # Remove +91, 91, spaces, dashes to get 10-digit number
+            normalized = re.sub(r'[\+\-\s]', '', phone)
+            if normalized.startswith('91') and len(normalized) > 10:
+                normalized = normalized[2:]
+            if len(normalized) == 10:
+                phone_numbers.append(normalized)
+
+        # Extract URLs
+        urls = re.findall(URL_PATTERN, text)
+
+        # Extract bank account numbers (be careful not to match phone numbers)
+        bank_matches = re.findall(BANK_ACCOUNT_PATTERN, text)
+        # Filter out phone numbers from bank account matches
+        bank_accounts = [
+            acc for acc in bank_matches
+            if acc not in phone_numbers and len(acc) >= 9
+        ]
+
+        # Extract suspicious keywords
+        text_lower = text.lower()
+        keywords = [
+            keyword for keyword in SUSPICIOUS_KEYWORDS
+            if keyword.lower() in text_lower
+        ]
+
+        return {
+            "bankAccounts": bank_accounts,
+            "upiIds": upi_ids,
+            "phoneNumbers": phone_numbers,
+            "phishingLinks": urls,
+            "suspiciousKeywords": keywords
+        }
 
     async def extract(
         self,
