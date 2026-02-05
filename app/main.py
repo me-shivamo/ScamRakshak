@@ -358,7 +358,7 @@ def should_end_conversation(message: str, session) -> bool:
             return True
 
     # Too many messages (conversation is likely complete)
-    if session.total_messages > 18:
+    if session.total_messages > 25:
         return True
 
     return False
@@ -368,45 +368,42 @@ def has_sufficient_intelligence(intel) -> bool:
     """
     Check if we have gathered enough intelligence to end the conversation.
 
-    We consider intelligence sufficient if we have at least:
-    - 1 UPI ID OR 1 phone number OR 1 bank account
-    - AND at least one of the other categories (links or keywords)
+    We require HIGH-VALUE intelligence before ending:
+    - At least 2 of: UPI ID, phone number, bank account, phishing link
+    - This ensures we maximize intelligence extraction
 
-    This ensures we don't end too early but also don't drag on unnecessarily.
+    We want to keep the scammer engaged as long as possible to extract
+    all valuable information before ending the conversation.
     """
-    # Count primary intelligence (high value)
-    primary_count = 0
+    # Count high-value intelligence items
+    high_value_count = 0
+
     if intel.upiIds:
-        primary_count += 1
+        high_value_count += 1
     if intel.phoneNumbers:
-        primary_count += 1
+        high_value_count += 1
     if intel.bankAccounts:
-        primary_count += 1
-
-    # Count secondary intelligence
-    secondary_count = 0
+        high_value_count += 1
     if intel.phishingLinks:
-        secondary_count += 1
-    if intel.suspiciousKeywords:
-        secondary_count += 1
+        high_value_count += 1
 
-    # Sufficient if we have at least 2 primary items
-    # OR 1 primary + 1 secondary
-    if primary_count >= 2:
-        return True
-    if primary_count >= 1 and secondary_count >= 1:
-        return True
-
-    return False
+    # Only consider sufficient if we have at least 2 high-value items
+    # This ensures we don't end the conversation too early
+    return high_value_count >= 2
 
 
 async def send_callback_background(session_id: str):
     """
-    Send callback in the background.
+    Send callback in the background with delay.
 
     This is called when we detect the conversation has ended.
-    Sends callback with all gathered intelligence to GUVI.
+    We wait 10 seconds before sending to ensure we capture any
+    last-minute messages and have the most up-to-date intelligence.
     """
+    # Wait 10 seconds to allow any final messages to be processed
+    await asyncio.sleep(15)
+
+    # Re-fetch session to get the latest data after the delay
     session = await session_manager.get(session_id)
     if session and not session.callback_sent:
         # Always send callback when conversation ends - we have intelligence to report
