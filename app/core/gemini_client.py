@@ -257,6 +257,117 @@ Respond in JSON format ONLY:
             logger.error(f"OpenAI extraction error: {e}")
             return {}
 
+    async def extract_intelligence_from_conversation(
+        self,
+        conversation_history: List[Dict[str, str]]
+    ) -> Dict:
+        """
+        Use AI to extract ALL intelligence from the entire conversation.
+
+        This analyzes the full conversation to extract:
+        - Bank account numbers (even obfuscated or written in words)
+        - UPI IDs (all formats like name@ybl, phone@paytm)
+        - Phone numbers (Indian format, even as words)
+        - Phishing URLs/links
+        - Suspicious keywords indicating scam type
+
+        Args:
+            conversation_history: List of messages with 'role' and 'content' keys
+
+        Returns:
+            Dictionary matching ExtractedIntelligence schema:
+            {
+                "bankAccounts": [],
+                "upiIds": [],
+                "phoneNumbers": [],
+                "phishingLinks": [],
+                "suspiciousKeywords": []
+            }
+        """
+        # Build conversation text for analysis
+        conversation_text = "\n".join([
+            f"{msg.get('role', 'unknown').upper()}: {msg.get('content', '')}"
+            for msg in conversation_history
+        ])
+
+        extraction_prompt = f"""You are an expert intelligence extractor for scam detection. Analyze this entire conversation and extract ALL sensitive information.
+
+CONVERSATION:
+{conversation_text}
+
+EXTRACT THE FOLLOWING (be thorough, check all messages):
+
+1. **Bank Account Numbers**: Any 9-18 digit numbers that could be bank accounts. Even if written in words like "one two three four..." convert them to digits.
+
+2. **UPI IDs**: Any UPI payment addresses in format username@bankhandle. Common handles: ybl, paytm, okaxis, oksbi, okicici, okhdfcbank, apl, upi, phonepe, gpay, etc.
+
+3. **Phone Numbers**: Indian phone numbers (10 digits starting with 6-9). Handle:
+   - Standard format: 9876543210
+   - With country code: +91 9876543210, 91-9876543210
+   - Written in words: "nine eight seven six five four three two one zero"
+   - Spaced/formatted: "98765 43210", "9876-543-210"
+
+4. **Phishing Links**: Any URLs or links, especially suspicious ones (shortened URLs, fake bank sites, etc.)
+
+5. **Suspicious Keywords**: Key scam-related words/phrases found:
+   - lottery, winner, prize, jackpot
+   - urgent, immediately, within 24 hours
+   - blocked, suspended, verify, update
+   - otp, cvv, pin, password
+   - processing fee, advance payment, registration fee
+   - guaranteed returns, double money, investment
+   - kyc, link aadhaar, pan card
+
+Respond in JSON format ONLY (no other text):
+{{
+    "bankAccounts": ["list of account numbers as strings"],
+    "upiIds": ["list of UPI IDs"],
+    "phoneNumbers": ["list of 10-digit phone numbers"],
+    "phishingLinks": ["list of URLs"],
+    "suspiciousKeywords": ["list of scam keywords found"]
+}}
+
+IMPORTANT:
+- Return empty arrays [] if nothing found for a category
+- Normalize phone numbers to 10 digits (remove +91, spaces, dashes)
+- Convert numbers written in words to digits
+- Include ALL instances found across the entire conversation"""
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert scam intelligence extractor. Extract ALL sensitive information from conversations. Always respond with valid JSON only."
+                    },
+                    {"role": "user", "content": extraction_prompt}
+                ],
+                temperature=0.1,
+                max_tokens=1000
+            )
+
+            result = self._parse_json_response(response.choices[0].message.content)
+
+            # Ensure all required keys exist with proper format
+            return {
+                "bankAccounts": result.get("bankAccounts", []),
+                "upiIds": result.get("upiIds", []),
+                "phoneNumbers": result.get("phoneNumbers", []),
+                "phishingLinks": result.get("phishingLinks", []),
+                "suspiciousKeywords": result.get("suspiciousKeywords", [])
+            }
+
+        except Exception as e:
+            logger.error(f"OpenAI conversation extraction error: {e}")
+            return {
+                "bankAccounts": [],
+                "upiIds": [],
+                "phoneNumbers": [],
+                "phishingLinks": [],
+                "suspiciousKeywords": []
+            }
+
     def _build_conversation_prompt(
         self,
         system_prompt: str,

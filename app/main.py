@@ -238,13 +238,19 @@ async def honeypot_endpoint(
             language=language
         )
 
-        # Step 3: Extract intelligence from the scammer's message
-        session.extracted_intelligence = await intelligence_extractor.extract(
-            text=request.message.text,
+        # Step 3: Add scammer's message to history first (so we can extract from full conversation)
+        session.conversation_history.append({
+            "role": "scammer",
+            "content": request.message.text
+        })
+
+        # Step 4: Extract intelligence from the entire conversation using AI
+        session.extracted_intelligence = await intelligence_extractor.extract_from_conversation(
+            conversation_history=session.conversation_history,
             existing=session.extracted_intelligence
         )
 
-        # Step 4: Detect if this is a scam
+        # Step 5: Detect if this is a scam
         is_scam, confidence, scam_type, indicators = await scam_detector.detect(
             message=request.message.text,
             conversation_history=session.conversation_history,
@@ -256,7 +262,7 @@ async def honeypot_endpoint(
         session.scam_confidence = confidence
         session.scam_type = scam_type
 
-        # Step 5: Generate honeypot response
+        # Step 6: Generate honeypot response
         response_text, agent_note = await honeypot_agent.generate_response(
             scammer_message=request.message.text,
             conversation_history=session.conversation_history,
@@ -264,13 +270,8 @@ async def honeypot_endpoint(
             extracted_intel=session.extracted_intelligence.model_dump()
         )
 
-        # Step 6: Update conversation history
-        # Add scammer's message
-        session.conversation_history.append({
-            "role": "scammer",
-            "content": request.message.text
-        })
-        # Add our response
+        # Step 7: Add our response to conversation history
+        # (scammer's message was already added in Step 3)
         session.conversation_history.append({
             "role": "agent",
             "content": response_text
@@ -282,7 +283,7 @@ async def honeypot_endpoint(
         # Add agent note
         session.agent_notes.append(agent_note)
 
-        # Step 7: Check if conversation should end
+        # Step 8: Check if conversation should end
         if should_end_conversation(request.message.text, session):
             session.conversation_ended = True
             # Send callback in background
@@ -291,7 +292,7 @@ async def honeypot_endpoint(
                 session.session_id
             )
 
-        # Step 8: Save session
+        # Step 9: Save session
         await session_manager.update(request.sessionId, session)
 
         logger.info(
@@ -322,17 +323,34 @@ def should_end_conversation(message: str, session) -> bool:
     Detect if the conversation should end.
 
     Triggers:
-    - Explicit end signals from scammer
+    - All critical intelligence gathered (UPI, phone, bank account)
+    - Explicit end signals from scammer (when they realize it's a trap)
     - Conversation too long (>50 messages)
-    - Scammer realized it's a trap
+    - Minimum engagement required (at least 4 messages)
     """
+    # Don't end conversation too early - need minimum engagement for intelligence
+    if session.total_messages < 4:
+        return False
+
+    # Check if we've gathered sufficient intelligence
+    intel = session.extracted_intelligence
+    if has_sufficient_intelligence(intel):
+        logger.info(
+            f"Session {session.session_id}: Sufficient intelligence gathered. "
+            f"UPIs: {len(intel.upiIds)}, Phones: {len(intel.phoneNumbers)}, "
+            f"Bank Accounts: {len(intel.bankAccounts)}, Links: {len(intel.phishingLinks)}"
+        )
+        return True
+
     message_lower = message.lower()
 
-    # End signals
+    # End signals - phrases that indicate scammer realized it's a trap
+    # Be more specific to avoid false positives from scam messages
     end_signals = [
-        "bye", "goodbye", "stop", "block", "report",
-        "police", "fraud", "scam", "fake", "cheat",
-        "don't contact", "stop messaging", "harassment"
+        "bye", "goodbye", "stop talking", "stop messaging",
+        "don't contact", "harassment", "i will report",
+        "going to police", "calling police", "you are fake",
+        "this is fake", "you are fraud", "time waste"
     ]
 
     for signal in end_signals:
@@ -340,7 +358,43 @@ def should_end_conversation(message: str, session) -> bool:
             return True
 
     # Too many messages (conversation is likely complete)
-    if session.total_messages > 50:
+    if session.total_messages > 18:
+        return True
+
+    return False
+
+
+def has_sufficient_intelligence(intel) -> bool:
+    """
+    Check if we have gathered enough intelligence to end the conversation.
+
+    We consider intelligence sufficient if we have at least:
+    - 1 UPI ID OR 1 phone number OR 1 bank account
+    - AND at least one of the other categories (links or keywords)
+
+    This ensures we don't end too early but also don't drag on unnecessarily.
+    """
+    # Count primary intelligence (high value)
+    primary_count = 0
+    if intel.upiIds:
+        primary_count += 1
+    if intel.phoneNumbers:
+        primary_count += 1
+    if intel.bankAccounts:
+        primary_count += 1
+
+    # Count secondary intelligence
+    secondary_count = 0
+    if intel.phishingLinks:
+        secondary_count += 1
+    if intel.suspiciousKeywords:
+        secondary_count += 1
+
+    # Sufficient if we have at least 2 primary items
+    # OR 1 primary + 1 secondary
+    if primary_count >= 2:
+        return True
+    if primary_count >= 1 and secondary_count >= 1:
         return True
 
     return False
@@ -351,16 +405,24 @@ async def send_callback_background(session_id: str):
     Send callback in the background.
 
     This is called when we detect the conversation has ended.
-    Only sends callback if scam was detected (GUVI requirement).
+    Sends callback with all gathered intelligence to GUVI.
     """
     session = await session_manager.get(session_id)
-    if session and not session.callback_sent and session.scam_detected:
-        logger.info(f"Sending callback for session {session_id}")
+    if session and not session.callback_sent:
+        # Always send callback when conversation ends - we have intelligence to report
+        intel = session.extracted_intelligence
+        logger.info(
+            f"Sending callback for session {session_id}. "
+            f"Scam: {session.scam_detected}, "
+            f"Intelligence: UPIs={len(intel.upiIds)}, Phones={len(intel.phoneNumbers)}, "
+            f"Banks={len(intel.bankAccounts)}, Links={len(intel.phishingLinks)}"
+        )
         success = await callback_service.send_callback(session)
         if success:
             await session_manager.mark_callback_sent(session_id)
-    elif session and not session.scam_detected:
-        logger.info(f"Skipping callback for session {session_id} - no scam detected")
+            logger.info(f"Callback sent successfully for session {session_id}")
+        else:
+            logger.error(f"Failed to send callback for session {session_id}")
 
 
 # ===== Run the App =====

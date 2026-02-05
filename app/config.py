@@ -48,7 +48,7 @@ class Settings(BaseSettings):
 
     # Inactivity timeout in seconds (default: 5 minutes)
     # If no message for this long, we consider conversation ended
-    MAX_INACTIVE_SECONDS: int = 300
+    MAX_INACTIVE_SECONDS: int = 20
 
     # GUVI callback URL (where we send final results)
     GUVI_CALLBACK_URL: str = "https://hackathon.guvi.in/api/updateHoneyPotFinalResult"

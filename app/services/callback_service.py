@@ -26,16 +26,26 @@ WHAT WE SEND:
 
 IMPORTANT:
 If this callback is not sent, GUVI cannot evaluate the solution!
+
+JSON FILES:
+Extracted intelligence is saved to ./extracted_intelligence/<sessionId>.json
+for debugging and audit purposes.
 """
 
+import json
 import logging
 import httpx
+from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 from app.config import settings
 from app.models.schemas import SessionData, CallbackPayload
 
 logger = logging.getLogger(__name__)
+
+# Directory for saving intelligence JSON files
+INTELLIGENCE_DIR = Path("./extracted_intelligence")
 
 
 class CallbackService:
@@ -52,7 +62,11 @@ class CallbackService:
         self.callback_url = settings.GUVI_CALLBACK_URL
         self.timeout = 30.0  # 30 seconds timeout
 
+        # Create intelligence directory if it doesn't exist
+        INTELLIGENCE_DIR.mkdir(parents=True, exist_ok=True)
+
         logger.info(f"Callback service initialized. URL: {self.callback_url}")
+        logger.info(f"Intelligence files will be saved to: {INTELLIGENCE_DIR.absolute()}")
 
     async def send_callback(self, session: SessionData) -> bool:
         """
@@ -77,8 +91,24 @@ class CallbackService:
             f"Scam: {session.scam_detected}, Messages: {session.total_messages}"
         )
 
-        # Log the payload for debugging
+        # Save intelligence to JSON file
+        self._save_intelligence_json(session, payload)
+
+        # Get payload as dictionary
         payload_dict = payload.model_dump()
+
+        # Print JSON payload to console before sending
+        print("\n" + "=" * 60)
+        print("📤 SENDING CALLBACK TO GUVI")
+        print("=" * 60)
+        print(f"URL: {self.callback_url}")
+        print(f"Session ID: {session.session_id}")
+        print("-" * 60)
+        print("JSON PAYLOAD:")
+        print(json.dumps(payload_dict, indent=2, ensure_ascii=False))
+        print("=" * 60 + "\n")
+
+        # Log the payload for debugging
         logger.info(f"Callback payload: {payload_dict}")
 
         try:
@@ -140,6 +170,47 @@ class CallbackService:
             extractedIntelligence=intel_dict,
             agentNotes=agent_notes
         )
+
+    def _save_intelligence_json(self, session: SessionData, payload: CallbackPayload) -> None:
+        """
+        Save extracted intelligence to a JSON file.
+
+        Args:
+            session: Session data containing the intelligence
+            payload: The callback payload to save
+        """
+        try:
+            # Create filename with session ID
+            filename = INTELLIGENCE_DIR / f"{session.session_id}.json"
+
+            # Build the JSON data
+            json_data = {
+                "sessionId": session.session_id,
+                "timestamp": datetime.utcnow().isoformat(),
+                "scamDetected": session.scam_detected,
+                "scamType": session.scam_type,
+                "scamConfidence": session.scam_confidence,
+                "totalMessagesExchanged": session.total_messages,
+                "extractedIntelligence": {
+                    "bankAccounts": session.extracted_intelligence.bankAccounts,
+                    "upiIds": session.extracted_intelligence.upiIds,
+                    "phoneNumbers": session.extracted_intelligence.phoneNumbers,
+                    "phishingLinks": session.extracted_intelligence.phishingLinks,
+                    "suspiciousKeywords": session.extracted_intelligence.suspiciousKeywords
+                },
+                "agentNotes": payload.agentNotes,
+                "channel": session.channel,
+                "language": session.language
+            }
+
+            # Write to file
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, indent=2, ensure_ascii=False)
+
+            logger.info(f"Intelligence saved to: {filename}")
+
+        except Exception as e:
+            logger.error(f"Failed to save intelligence JSON for session {session.session_id}: {e}")
 
     def _build_agent_notes(self, session: SessionData) -> str:
         """
