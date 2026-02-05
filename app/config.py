@@ -39,7 +39,11 @@ class Settings(BaseSettings):
     # Which Gemini model to use
     # gemini-1.5-flash = fast and cheap, good for hackathons
     # gemini-1.5-pro = more powerful but slower and more expensive
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-2.5-flash-lite"
+    # Which Gemini model to use (gemini-1.5-flash is fast and cheap)
+    # gemini-2.5-flash DUE
+    # gemini-3-flash-preview OVER
+
 
     # Session timeout in seconds (default: 1 hour)
     # After this time, old sessions are cleaned up
