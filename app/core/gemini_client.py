@@ -114,7 +114,7 @@ Respond in JSON format ONLY (no other text):
                 analysis_prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.1,  # Low temperature = more consistent/factual
-                    max_output_tokens=500
+                    max_output_tokens=1000
                 )
             )
 
@@ -188,7 +188,7 @@ Respond in JSON format ONLY (no other text):
         except Exception as e:
             logger.error(f"Gemini response generation error: {e}")
             # Return a generic response if API fails
-            return "Haan ji? Samajh nahi aaya, thoda aur batao beta..."
+            return "Error occurred while generating response. Please try again later."
 
     async def extract_intelligence(self, text: str) -> Dict:
         """
