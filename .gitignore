@@ -1,0 +1,38 @@
+# Environment variables (NEVER commit these - they contain secrets!)
+.env
+.env.local
+.env.production
+
+# Python cache files (temporary, recreated automatically)
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Virtual environment (each computer creates its own)
+venv/
+.venv/
+env/
+
+# IDE/Editor settings (personal preference, not needed in repo)
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/

@@ -1,0 +1,14 @@
+{
+  "sessionId": "test-session-001",
+  "message": {
+    "sender": "scammer",
+    "text": "Congratulations! You have won 10 lakh rupees in our lucky draw. Send your bank account number to claim your prize immediately.",
+    "timestamp": 1770005528731
+  },
+  "conversationHistory": [],
+  "metadata": {
+    "channel": "SMS",
+    "language": "English",
+    "locale": "IN"
+  }
+}

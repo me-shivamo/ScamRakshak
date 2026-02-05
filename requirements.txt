@@ -1,0 +1,16 @@
+# Web Framework
+fastapi==0.109.0          # FastAPI - A modern, fast web framework for building APIs
+uvicorn[standard]==0.27.0 # Uvicorn - The server that runs our FastAPI app
+
+# Data Validation
+pydantic==2.5.3           # Pydantic - Validates data automatically (checks if data is correct)
+pydantic-settings==2.1.0  # Helps load settings from environment variables
+
+# AI / Machine Learning
+google-generativeai==0.3.2  # Google Gemini - The AI that detects scams and generates responses
+
+# HTTP Client
+httpx==0.26.0             # HTTPX - Makes HTTP requests (to send data to GUVI callback)
+
+# Environment Variables
+python-dotenv==1.0.0      # Loads environment variables from .env file
